@@ -1,0 +1,2258 @@
+{
+  "info": {
+    "name": "Motor antifraude - furo e correcao",
+    "description": "Motor antifraude - ataques e correcoes (Parte 3 e Parte 4).\n\nANTES DE RODAR\n- Variaveis da collection: base_url (http://localhost:8000) e psp_url (http://localhost:8001).\n- .env do laboratorio: ALLOW_DEMO_HEADER=true (requests FURO usam X-Naive-Controls), EXPOSE_OTP=true (pasta 05) e NAIVE_MODE=false.\n- Rode `python attacks/reset_lab.py` ENTRE as pastas: contadores de velocity/BIN/cartao duram 10 min e contaminam o proximo cenario.\n- Ordem: pasta 00, depois cada pasta de cima para baixo (Runner ou Send manual).\n\nPara espelhar no Burp: Postman > Settings > Proxy > Custom proxy 127.0.0.1:8080.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "psp_url",
+      "value": "http://localhost:8001"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 Saude e PSP",
+      "item": [
+        {
+          "name": "00.1 GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"API no ar\", function(){ pm.expect(pm.response.code).to.equal(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "00.2 PSP - webhooks enviados (evidencia de cobrancas)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{psp_url}}/sent-webhooks",
+            "description": "Cada cobranca real no mock gera um webhook. Conte aqui para provar 'N cobrancas' em vez de 1."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"mock do PSP no ar\", function(){ pm.expect(pm.response.code).to.equal(200); });",
+                  "console.log(pm.response.text().slice(0, 2000));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Confere se API (8000) e mock do PSP (8001) estao de pe."
+    },
+    {
+      "name": "01 double_charge (Parte 3 + furo via header)",
+      "item": [
+        {
+          "name": "01.1 FURO - 1a chamada (idempotency desligada)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_dc_furo}}"
+              },
+              {
+                "key": "X-Naive-Controls",
+                "value": "idempotency"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_dc\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ana@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"idem_dc_furo\", \"dc-\" + rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.collectionVariables.set(\"dc_furo_id1\", j.id);",
+                  "pm.test(\"1a chamada devolve id\", function(){ pm.expect(j.id).to.be.ok; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "01.2 FURO - 2a chamada, mesma chave",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_dc_furo}}"
+              },
+              {
+                "key": "X-Naive-Controls",
+                "value": "idempotency"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_dc\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ana@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"FURO: 2a chamada gerou outro payment_id (cobranca em duplicidade)\", function(){",
+                  "  pm.expect(j.id).to.be.ok;",
+                  "  pm.expect(j.id).to.not.equal(pm.collectionVariables.get(\"dc_furo_id1\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "01.3 CORRECAO - 1a chamada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_dc_ok}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_dc\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ana@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"idem_dc_ok\", \"dc-\" + rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.collectionVariables.set(\"dc_ok_id1\", j.id);",
+                  "pm.test(\"1a chamada devolve id\", function(){ pm.expect(j.id).to.be.ok; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "01.4 CORRECAO - 2a chamada, mesma chave",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_dc_ok}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_dc\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ana@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"CORRECAO: devolve a mesma resposta (mesmo id), sem tocar no PSP\", function(){",
+                  "  pm.expect(j.id).to.equal(pm.collectionVariables.get(\"dc_ok_id1\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "01.5 CORRECAO - mesma chave, corpo diferente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_dc_ok}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"151.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_dc\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ana@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"mesma chave com outro corpo = 409\", function(){ pm.expect(pm.response.code).to.equal(409); });"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Retry sequencial. Furo = header X-Naive-Controls: idempotency (exige ALLOW_DEMO_HEADER=true)."
+    },
+    {
+      "name": "02 webhook replay e tamper (Parte 3)",
+      "item": [
+        {
+          "name": "02.1 Gera pagamento aprovado (dispara o webhook)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_wh_{{$timestamp}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ana@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.collectionVariables.set(\"wh_pay_id\", j.id);",
+                  "pm.test(\"pagamento aprovado\", function(){ pm.expect(j.decision).to.equal(\"approve\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02.2 Captura o webhook legitimo no mock do PSP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{psp_url}}/sent-webhooks",
+            "description": "Os nomes dos campos de /sent-webhooks nao constam no README. O script tenta variacoes comuns; veja o Console se falhar."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var data = J();",
+                  "var list = Array.isArray(data) ? data : (data.webhooks || data.items || data.sent || data.events || []);",
+                  "var last = list[list.length - 1] || {};",
+                  "var h = last.headers || {};",
+                  "var body = last.body || last.raw_body || last.raw || last.payload || last.content;",
+                  "if (body && typeof body !== \"string\") { body = JSON.stringify(body); }",
+                  "var ts = last.timestamp || last.ts || h[\"X-PSP-Timestamp\"] || h[\"x-psp-timestamp\"];",
+                  "var sig = last.signature || last.sig || h[\"X-PSP-Signature\"] || h[\"x-psp-signature\"];",
+                  "pm.collectionVariables.set(\"wh_body\", body || \"\");",
+                  "pm.collectionVariables.set(\"wh_ts\", String(ts || \"\"));",
+                  "pm.collectionVariables.set(\"wh_sig\", String(sig || \"\"));",
+                  "console.log(\"ultimo item de sent-webhooks:\", JSON.stringify(last).slice(0, 800));",
+                  "pm.test(\"capturou corpo, timestamp e assinatura (se falhar, ajuste os nomes dos campos neste script)\", function(){",
+                  "  pm.expect(body, \"body\").to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(ts, \"timestamp\").to.be.ok;",
+                  "  pm.expect(sig, \"signature\").to.be.ok;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02.3 REPLAY - reenvia o mesmo webhook (bytes e assinatura originais)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-PSP-Timestamp",
+                "value": "{{wh_ts}}"
+              },
+              {
+                "key": "X-PSP-Signature",
+                "value": "{{wh_sig}}"
+              }
+            ],
+            "url": "{{base_url}}/webhooks/psp",
+            "body": {
+              "mode": "raw",
+              "raw": "{{wh_body}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"REPLAY: 409 evento ja processado (se 401, o timestamp passou de 300s: rode 02.1 e 02.2 de novo)\", function(){",
+                  "  pm.expect(pm.response.code).to.equal(409);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02.4 TAMPER - altera amount_cents mantendo a assinatura antiga",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-PSP-Timestamp",
+                "value": "{{wh_ts}}"
+              },
+              {
+                "key": "X-PSP-Signature",
+                "value": "{{wh_sig}}"
+              }
+            ],
+            "url": "{{base_url}}/webhooks/psp",
+            "body": {
+              "mode": "raw",
+              "raw": "{{wh_body_t}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var body = pm.collectionVariables.get(\"wh_body\") || \"\";",
+                  "var t = body.replace(/(\"amount_cents\"\\s*:\\s*)(\\d+)/, function(m, a, b){ return a + b + \"0\"; });",
+                  "pm.collectionVariables.set(\"wh_body_t\", t);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var orig = pm.collectionVariables.get(\"wh_body\") || \"\";",
+                  "var t = pm.collectionVariables.get(\"wh_body_t\") || \"\";",
+                  "pm.test(\"o corpo foi de fato alterado (amount_cents com um digito a mais)\", function(){ pm.expect(t).to.not.equal(orig); });",
+                  "pm.test(\"TAMPER: 401, o MAC do corpo cru nao bate\", function(){ pm.expect(pm.response.code).to.equal(401); });"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Rode 02.1 a 02.4 em sequencia e logo em seguida (janela de 300 s). Para o corpo ir byte a byte, o Postman nao reformata raw, mas confira no Console."
+    },
+    {
+      "name": "03 card_testing (Parte 3)",
+      "item": [
+        {
+          "name": "03.1 iniciar contador",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"ct_n\", \"0\");"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03.2 micro-cobrancas (R$ 1,00) no mesmo BIN - repete ate o deny",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"1.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"{{ct_card}}\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_ct_{{ct_rid}}\",\n  \"ip\": \"203.0.113.{{ct_n}}\",\n  \"email\": \"ct{{ct_n}}.{{ct_rid}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var n = (+pm.collectionVariables.get(\"ct_n\") || 0) + 1;",
+                  "pm.collectionVariables.set(\"ct_n\", String(n));",
+                  "pm.collectionVariables.set(\"ct_card\", luhn(\"411111\"));",
+                  "pm.collectionVariables.set(\"ct_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "var n = +pm.collectionVariables.get(\"ct_n\");",
+                  "console.log(\"tentativa \" + n + \": \" + j.decision + \" score=\" + j.risk_score + \" \" + JSON.stringify(j.reasons));",
+                  "if (j.decision === \"deny\") {",
+                  "  pm.test(\"card testing barrado na tentativa \" + n + \" (esperado por volta da 5a)\", function(){",
+                  "    pm.expect(n).to.be.within(4, 6);",
+                  "    pm.expect(j.risk_score).to.be.at.least(70);",
+                  "  });",
+                  "} else if (n < 10) {",
+                  "  loopTo(\"03.2 micro-cobrancas (R$ 1,00) no mesmo BIN - repete ate o deny\");",
+                  "} else {",
+                  "  pm.test(\"deveria ter negado em ate 10 tentativas\", function(){ pm.expect(false, \"nenhum deny em 10 tentativas\").to.be.true; });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "No Runner, o 03.2 se repete sozinho ate o deny. Com Send manual, clique varias vezes."
+    },
+    {
+      "name": "04 idempotency_race (Parte 4)",
+      "item": [
+        {
+          "name": "04.1 FURO - 5 requisicoes simultaneas, mesma chave",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health",
+            "description": "O pre-request dispara 5 POST /payments ao mesmo tempo (pm.sendRequest) com X-Naive-Controls: idempotency. O GET /health e so o 'veiculo' do script."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var NAIVE = true;",
+                  "var key = \"race-\" + rid();",
+                  "var N = 5, out = [];",
+                  "var hdr = {\"Content-Type\": \"application/json\", \"Idempotency-Key\": key};",
+                  "if (NAIVE) { hdr[\"X-Naive-Controls\"] = \"idempotency\"; }",
+                  "var payload = JSON.stringify({amount: \"150.00\", currency: \"BRL\", card: \"4111111111111111\", bin: \"411111\",",
+                  "  customer_id: \"cust_race_\" + rid(), ip: \"203.0.113.10\", email: \"ana@example.com\", country: \"BR\"});",
+                  "pm.collectionVariables.set(\"race_results\", \"[]\");",
+                  "for (var i = 0; i < N; i++) {",
+                  "  pm.sendRequest({url: pm.collectionVariables.get(\"base_url\") + \"/payments\", method: \"POST\", header: hdr,",
+                  "                  body: {mode: \"raw\", raw: payload}}, function (err, res) {",
+                  "    var id = null, code = null;",
+                  "    if (!err) { code = res.code; try { id = res.json().id; } catch (e) {} }",
+                  "    out.push({err: err ? String(err) : null, code: code, id: id});",
+                  "    pm.collectionVariables.set(\"race_results\", JSON.stringify(out));",
+                  "  });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var r = JSON.parse(pm.collectionVariables.get(\"race_results\") || \"[]\");",
+                  "var ids = r.map(function(x){ return x.id; }).filter(Boolean).filter(function(v, i, a){ return a.indexOf(v) === i; });",
+                  "console.log(JSON.stringify(r));",
+                  "pm.test(\"5 respostas recebidas\", function(){ pm.expect(r.length).to.equal(5); });",
+                  "pm.test(\"FURO: \" + ids.length + \" payment_ids distintos (esperado > 1 = cobranca em duplicidade)\", function(){ pm.expect(ids.length).to.be.above(1); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04.2 CORRECAO - 5 requisicoes simultaneas, mesma chave",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var NAIVE = false;",
+                  "var key = \"race-\" + rid();",
+                  "var N = 5, out = [];",
+                  "var hdr = {\"Content-Type\": \"application/json\", \"Idempotency-Key\": key};",
+                  "if (NAIVE) { hdr[\"X-Naive-Controls\"] = \"idempotency\"; }",
+                  "var payload = JSON.stringify({amount: \"150.00\", currency: \"BRL\", card: \"4111111111111111\", bin: \"411111\",",
+                  "  customer_id: \"cust_race_\" + rid(), ip: \"203.0.113.10\", email: \"ana@example.com\", country: \"BR\"});",
+                  "pm.collectionVariables.set(\"race_results\", \"[]\");",
+                  "for (var i = 0; i < N; i++) {",
+                  "  pm.sendRequest({url: pm.collectionVariables.get(\"base_url\") + \"/payments\", method: \"POST\", header: hdr,",
+                  "                  body: {mode: \"raw\", raw: payload}}, function (err, res) {",
+                  "    var id = null, code = null;",
+                  "    if (!err) { code = res.code; try { id = res.json().id; } catch (e) {} }",
+                  "    out.push({err: err ? String(err) : null, code: code, id: id});",
+                  "    pm.collectionVariables.set(\"race_results\", JSON.stringify(out));",
+                  "  });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var r = JSON.parse(pm.collectionVariables.get(\"race_results\") || \"[]\");",
+                  "var ids = r.map(function(x){ return x.id; }).filter(Boolean).filter(function(v, i, a){ return a.indexOf(v) === i; });",
+                  "console.log(JSON.stringify(r));",
+                  "pm.test(\"5 respostas recebidas\", function(){ pm.expect(r.length).to.equal(5); });",
+                  "pm.test(\"CORRECAO: 1 unico payment_id (SET NX deixa uma so dona)\", function(){ pm.expect(ids.length).to.equal(1); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04.3 PSP - conte os webhooks enviados",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{psp_url}}/sent-webhooks"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "console.log(pm.response.text().slice(0, 3000));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Paralelismo real dentro do Postman via pm.sendRequest. No Burp, use o grupo de abas do Repeater enviado em paralelo."
+    },
+    {
+      "name": "05 challenge_abuse (Parte 4)",
+      "item": [
+        {
+          "name": "05.1 cria pagamento A (challenge)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4000000000000002\",\n  \"bin\": \"400000\",\n  \"customer_id\": \"cust_ch_{{ch_rid}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ch.{{ch_rid}}@example.com\",\n  \"country\": \"US\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"ch_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "var otp = j.otp_demo || (j.challenge && j.challenge.otp_demo) || \"\";",
+                  "pm.collectionVariables.set(\"ch_id_a\", j.id);",
+                  "pm.collectionVariables.set(\"ch_otp_a\", otp);",
+                  "pm.test(\"decisao = challenge (BIN americano visto de rede BR)\", function(){ pm.expect(j.decision).to.equal(\"challenge\"); });",
+                  "pm.test(\"otp_demo presente (EXPOSE_OTP=true no laboratorio)\", function(){ pm.expect(otp).to.be.ok; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.2 FURO - verify com codigo ERRADO (challenge desligado)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Naive-Controls",
+                "value": "challenge"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{ch_id_a}}/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"000000\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"FURO: qualquer codigo aprova\", function(){ pm.expect(pm.response.code).to.be.below(300); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.3 FURO - repete o verify (cobra de novo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Naive-Controls",
+                "value": "challenge"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{ch_id_a}}/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"000000\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"FURO: repetir o verify passa de novo (nova cobranca)\", function(){ pm.expect(pm.response.code).to.be.below(300); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.4 cria pagamento B (challenge)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4000000000000002\",\n  \"bin\": \"400000\",\n  \"customer_id\": \"cust_ch_{{ch_rid}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ch.{{ch_rid}}@example.com\",\n  \"country\": \"US\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"ch_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "var otp = j.otp_demo || (j.challenge && j.challenge.otp_demo) || \"\";",
+                  "pm.collectionVariables.set(\"ch_id_b\", j.id);",
+                  "pm.collectionVariables.set(\"ch_otp_b\", otp);",
+                  "pm.test(\"decisao = challenge (BIN americano visto de rede BR)\", function(){ pm.expect(j.decision).to.equal(\"challenge\"); });",
+                  "pm.test(\"otp_demo presente (EXPOSE_OTP=true no laboratorio)\", function(){ pm.expect(otp).to.be.ok; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.5 CORRECAO - codigo errado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{ch_id_b}}/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"000000\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"CORRECAO: codigo errado = 401\", function(){ pm.expect(pm.response.code).to.equal(401); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.6 CORRECAO - codigo certo (OTP do lab)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{ch_id_b}}/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"{{ch_otp_b}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"CORRECAO: codigo certo aprova\", function(){ pm.expect(pm.response.code).to.be.below(300); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.7 CORRECAO - replay do mesmo OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{ch_id_b}}/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"{{ch_otp_b}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"CORRECAO: OTP de uso unico (401/409 no replay)\", function(){ pm.expect([401, 409]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.8 cria pagamento C (challenge)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4000000000000002\",\n  \"bin\": \"400000\",\n  \"customer_id\": \"cust_ch_{{ch_rid}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ch.{{ch_rid}}@example.com\",\n  \"country\": \"US\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"ch_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "var otp = j.otp_demo || (j.challenge && j.challenge.otp_demo) || \"\";",
+                  "pm.collectionVariables.set(\"ch_id_c\", j.id);",
+                  "pm.collectionVariables.set(\"ch_otp_c\", otp);",
+                  "pm.test(\"decisao = challenge (BIN americano visto de rede BR)\", function(){ pm.expect(j.decision).to.equal(\"challenge\"); });",
+                  "pm.test(\"otp_demo presente (EXPOSE_OTP=true no laboratorio)\", function(){ pm.expect(otp).to.be.ok; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.9.1 CORRECAO - erro 1 de 3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{ch_id_c}}/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"000001\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"codigo errado = 401\", function(){ pm.expect(pm.response.code).to.equal(401); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.9.2 CORRECAO - erro 2 de 3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{ch_id_c}}/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"000002\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"codigo errado = 401\", function(){ pm.expect(pm.response.code).to.equal(401); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.9.3 CORRECAO - erro 3 de 3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{ch_id_c}}/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"000003\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"codigo errado = 401\", function(){ pm.expect(pm.response.code).to.equal(401); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05.10 CORRECAO - codigo certo DEPOIS do teto de 3 erros",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/payments/{{ch_id_c}}/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"{{ch_otp_c}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"teto de tentativas: nem o codigo certo passa mais (precisa de outro pagamento)\", function(){ pm.expect(pm.response.code).to.be.at.least(400); });"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Requer EXPOSE_OTP=true. Furo = X-Naive-Controls: challenge so no verify."
+    },
+    {
+      "name": "06 velocity_shard (Parte 4)",
+      "item": [
+        {
+          "name": "06.1 FURO - iniciar (cartao novo)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"vs_n\", \"0\"); pm.collectionVariables.set(\"vs_card\", luhn(\"520000\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06.2 FURO - mesmo cartao, IP e e-mail novos a cada request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-Naive-Controls",
+                "value": "velocity"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"{{vs_card}}\",\n  \"bin\": \"520000\",\n  \"customer_id\": \"cust_vs_{{vs_n}}_{{vs_rid}}\",\n  \"ip\": \"{{vs_ip}}\",\n  \"email\": \"vs{{vs_n}}.{{vs_rid}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var n = (+pm.collectionVariables.get(\"vs_n\") || 0) + 1;",
+                  "pm.collectionVariables.set(\"vs_n\", String(n));",
+                  "pm.collectionVariables.set(\"vs_ip\", rip());",
+                  "pm.collectionVariables.set(\"vs_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "var n = +pm.collectionVariables.get(\"vs_n\");",
+                  "console.log(\"tentativa \" + n + \" ip=\" + pm.collectionVariables.get(\"vs_ip\") + \": \" + j.decision + \" score=\" + j.risk_score);",
+                  "pm.test(\"FURO: tentativa \" + n + \" nao foi negada (cada IP/e-mail fica em 1)\", function(){ pm.expect(j.decision).to.not.equal(\"deny\"); });",
+                  "if (n < 10) { loopTo(\"06.2 FURO - mesmo cartao, IP e e-mail novos a cada request\"); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06.3 CORRECAO - iniciar (cartao novo)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"vs_n\", \"0\"); pm.collectionVariables.set(\"vs_card\", luhn(\"520001\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06.4 CORRECAO - mesmo cartao, IP e e-mail novos a cada request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"{{vs_card}}\",\n  \"bin\": \"520001\",\n  \"customer_id\": \"cust_vs_{{vs_n}}_{{vs_rid}}\",\n  \"ip\": \"{{vs_ip}}\",\n  \"email\": \"vs{{vs_n}}.{{vs_rid}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var n = (+pm.collectionVariables.get(\"vs_n\") || 0) + 1;",
+                  "pm.collectionVariables.set(\"vs_n\", String(n));",
+                  "pm.collectionVariables.set(\"vs_ip\", rip());",
+                  "pm.collectionVariables.set(\"vs_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "var n = +pm.collectionVariables.get(\"vs_n\");",
+                  "console.log(\"tentativa \" + n + \": \" + j.decision + \" score=\" + j.risk_score + \" \" + JSON.stringify(j.reasons));",
+                  "if (j.decision === \"deny\") {",
+                  "  pm.test(\"CORRECAO: mesmo cartao negado na tentativa \" + n + \" (esperado ~8a)\", function(){",
+                  "    pm.expect(n).to.be.within(8, 9);",
+                  "    pm.expect(j.risk_score).to.be.at.least(70);",
+                  "  });",
+                  "} else if (n < 12) {",
+                  "  loopTo(\"06.4 CORRECAO - mesmo cartao, IP e e-mail novos a cada request\");",
+                  "} else {",
+                  "  pm.test(\"deveria ter negado\", function(){ pm.expect(false, \"sem deny em 12 tentativas\").to.be.true; });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Mesmo PAN (fingerprint igual), IP do JSON e e-mail trocados a cada request."
+    },
+    {
+      "name": "07 forged_signals (Parte 4)",
+      "item": [
+        {
+          "name": "07.1 FURO - pais/IP/BIN forjados no JSON",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-Naive-Controls",
+                "value": "signals"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4000000000000002\",\n  \"bin\": \"400000\",\n  \"customer_id\": \"cust_fs_{{fs_rid}}\",\n  \"ip\": \"198.51.100.7\",\n  \"email\": \"fs.{{fs_rid}}@example.com\",\n  \"country\": \"US\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"fs_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"FURO: o motor acredita no country/bin do corpo e aprova\", function(){ pm.expect(j.decision).to.equal(\"approve\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07.2 CORRECAO - mesmo corpo, sinais observados",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4000000000000002\",\n  \"bin\": \"400000\",\n  \"customer_id\": \"cust_fs_{{fs_rid}}\",\n  \"ip\": \"198.51.100.7\",\n  \"email\": \"fs.{{fs_rid}}@example.com\",\n  \"country\": \"US\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"fs_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"CORRECAO: BIN do PAN (US) x IP do socket (BR) = challenge 40 via geo_bin\", function(){",
+                  "  pm.expect(j.decision).to.equal(\"challenge\");",
+                  "  pm.expect(j.risk_score).to.equal(40);",
+                  "  pm.expect(has(j, \"geo\")).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07.3 FURO - e-mail descartavel ignorado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-Naive-Controls",
+                "value": "signals"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_fm_{{fs_rid}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"fm.{{fs_rid}}@mailinator.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"fs_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"FURO: dominio descartavel e ignorado\", function(){ pm.expect(j.decision).to.equal(\"approve\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07.4 CORRECAO - e-mail descartavel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_fm_{{fs_rid}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"fm.{{fs_rid}}@mailinator.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"fs_rid\", rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"CORRECAO: mailinator.com marca descartavel = challenge 40\", function(){",
+                  "  pm.expect(j.decision).to.equal(\"challenge\");",
+                  "  pm.expect(j.risk_score).to.equal(40);",
+                  "  pm.expect(has(j, \"geo\")).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07.5 campo desconhecido no JSON (extra=forbid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_ok\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"ana@example.com\",\n  \"country\": \"BR\",\n  \"risk_override\": \"0\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.test(\"campo desconhecido e rejeitado (400/422)\", function(){ pm.expect([400, 422]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Sem o header, o IP de pontuacao e o do socket e o BIN vem do PAN, nao do campo declarado."
+    },
+    {
+      "name": "08 zscore_outlier (Parte 4, bonus)",
+      "item": [
+        {
+          "name": "08.1 cold start - cliente novo, valor alto",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"5000.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_zc_{{$timestamp}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"zc{{$timestamp}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"cold start: sem historico, z-score nao pontua (nao ha falso-deny)\", function(){ pm.expect(has(j, \"zscore\")).to.be.false; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.2 historico 1 de 5 (R$ 50.00)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"50.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_z_{{zc}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"{{zc}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "pm.collectionVariables.set(\"zc\", \"z\" + rid());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"base pequena (<5): z-score com peso zero\", function(){ pm.expect(has(j, \"zscore\")).to.be.false; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.3 historico 2 de 5 (R$ 52.00)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"52.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_z_{{zc}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"{{zc}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"base pequena (<5): z-score com peso zero\", function(){ pm.expect(has(j, \"zscore\")).to.be.false; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.4 historico 3 de 5 (R$ 48.00)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"48.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_z_{{zc}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"{{zc}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"base pequena (<5): z-score com peso zero\", function(){ pm.expect(has(j, \"zscore\")).to.be.false; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.5 historico 4 de 5 (R$ 51.00)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"51.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_z_{{zc}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"{{zc}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"base pequena (<5): z-score com peso zero\", function(){ pm.expect(has(j, \"zscore\")).to.be.false; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.6 historico 5 de 5 (R$ 49.00)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"49.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_z_{{zc}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"{{zc}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"base pequena (<5): z-score com peso zero\", function(){ pm.expect(has(j, \"zscore\")).to.be.false; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.7 OUTLIER - R$ 5.000,00 contra historico de ~R$ 50",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"5000.00\",\n  \"currency\": \"BRL\",\n  \"card\": \"4111111111111111\",\n  \"bin\": \"411111\",\n  \"customer_id\": \"cust_z_{{zc}}\",\n  \"ip\": \"203.0.113.10\",\n  \"email\": \"{{zc}}@example.com\",\n  \"country\": \"BR\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "function J(){ try { return pm.response.json(); } catch (e) { return {}; } }",
+                  "function rid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }",
+                  "function luhn(bin){ var b = String(bin); while (b.length < 15) { b += Math.floor(Math.random() * 10); } var s = 0; for (var i = 0; i < 15; i++) { var d = +b[14 - i]; if (i % 2 === 0) { d *= 2; if (d > 9) { d -= 9; } } s += d; } return b + ((10 - (s % 10)) % 10); }",
+                  "function rip(){ var f = [45, 52, 64, 81, 95, 104, 134, 151, 185, 201]; return [f[Math.floor(Math.random() * f.length)], Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), 1 + Math.floor(Math.random() * 253)].join('.'); }",
+                  "function loopTo(name){ if (pm.execution && pm.execution.setNextRequest) { pm.execution.setNextRequest(name); } else { postman.setNextRequest(name); } }",
+                  "function has(j, rule){ return JSON.stringify(j.reasons || []).toLowerCase().indexOf(rule) !== -1; }",
+                  "var j = J();",
+                  "pm.test(\"outlier: challenge com peso 40, nunca deny sozinho\", function(){",
+                  "  pm.expect(j.decision).to.equal(\"challenge\");",
+                  "  pm.expect(j.risk_score).to.equal(40);",
+                  "  pm.expect(has(j, \"zscore\")).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Rode 08.1 a 08.7 em sequencia. O historico precisa de desvio nao nulo (valores diferentes)."
+    }
+  ]
+}
